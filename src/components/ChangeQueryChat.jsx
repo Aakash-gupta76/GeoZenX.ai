@@ -23,18 +23,24 @@ export default function ChangeQueryChat({ analysisData }) {
   const [inputQuery, setInputQuery] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const chatBottomRef = useRef(null);
+  const hasUserInteraction = useRef(false);
 
   useEffect(() => {
     setMessages([makeWelcomeMessage(Boolean(analysisData))]);
   }, [analysisData]);
 
   useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!chatBottomRef.current) return;
+    if (!hasUserInteraction.current && messages.length <= 1 && !isTyping) return;
+
+    chatBottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages, isTyping]);
 
   const handleSendMessage = async (textToSend = inputQuery) => {
     const text = textToSend.trim();
     if (!text || isTyping) return;
+
+    hasUserInteraction.current = true;
 
     const history = messages
       .filter((message) => message.sender === 'user' || message.sender === 'assistant')

@@ -16,10 +16,10 @@ export default function Hero() {
     <section className="hero-section">
       <div className="hero-content mx-auto grid items-center gap-10 px-4 sm:px-6 lg:grid-cols-2 lg:gap-12 lg:px-8">
         <div className="hero-copy">
-          <div className="hero-kicker mb-5 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase">
+          {/* <div className="hero-kicker mb-5 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase">
             <Sparkles className="h-3.5 w-3.5" />
             <span>Satellite intelligence, made clear</span>
-          </div>
+          </div> */}
 
           <h1 className="hero-title mb-5 font-extrabold text-white">
             See what’s changing on <span>Satellite images</span>

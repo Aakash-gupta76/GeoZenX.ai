@@ -377,7 +377,7 @@ export const generateAnalysisReport = async ({ analysis, images }) => {
     doc.setTextColor(...COLORS.muted);
     doc.text('Image dimensions shown where available.', MARGIN, y + 32);
 
-    y = addSectionTitle(doc, 'Analysis summary', y + 7);
+    y = addSectionTitle(doc, 'Analysis summary', y + 47);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(...COLORS.ink);
     const automaticSummary = makeSummary({ changed, unchanged, categories });
@@ -385,7 +385,7 @@ export const generateAnalysisReport = async ({ analysis, images }) => {
       y = addWrappedText(doc, sentence, MARGIN, y, CONTENT_WIDTH, 10, 5) + 1;
     });
 
-    y = addSectionTitle(doc, 'Binary change detection', y + 2);
+    y = addSectionTitle(doc, 'Binary change detection', y + 7);
     y = addWrappedText(doc, 'Binary change detection — model-predicted changed/unchanged pixels.', MARGIN, y, CONTENT_WIDTH, 10, 5) + 5;
     const threshold = firstValue(changeMask.threshold, changeMask.decisionThreshold, changeMask.decision_threshold);
     const totalPixels = finiteNumber(firstValue(changeMask.width, changeMask.inputWidth)) !== null

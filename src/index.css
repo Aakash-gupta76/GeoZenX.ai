@@ -106,12 +106,35 @@
 }
 
 .header-link {
+  position: relative;
   color: #9baab8;
-  transition: color 160ms ease;
+  padding: 0.3rem 0.15rem;
+  transition: color 180ms ease, transform 180ms ease, text-shadow 180ms ease;
 }
 
-.header-link:hover {
+.header-link::after {
+  position: absolute;
+  inset: auto 0 -0.35rem 0;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(139, 224, 193, 0), rgba(139, 224, 193, 0.9), rgba(128, 185, 245, 0));
+  opacity: 0;
+  transform: scaleX(0.65);
+  transition: opacity 180ms ease, transform 180ms ease;
+  content: "";
+}
+
+.header-link:hover,
+.header-link:focus-visible {
   color: #f5fbff;
+  transform: translateY(-1px);
+  text-shadow: 0 0 20px rgba(139, 224, 193, 0.3);
+}
+
+.header-link:hover::after,
+.header-link:focus-visible::after {
+  opacity: 1;
+  transform: scaleX(1);
 }
 
 .hero-section {
