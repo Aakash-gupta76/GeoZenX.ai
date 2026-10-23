@@ -152,7 +152,9 @@ app.post("/api/analyze", imageUpload, async (req, res) => {
     }
 
     const result = await callAIService("/analyze", files, { areaKm2 });
-    if (result.data?.processing?.downsampled) {
+    const analysisData = result.data || result;
+
+    if (analysisData?.processing?.downsampled) {
       falseDetection.issues = [
         ...(falseDetection.issues || []),
         {
@@ -160,19 +162,32 @@ app.post("/api/analyze", imageUpload, async (req, res) => {
           detected: true,
           severity: "medium",
           explanation: (
-            `For fast preview, the ${result.data.processing.inputWidth} × ${result.data.processing.inputHeight} ` +
-            `images were downsampled to ${result.data.processing.inferenceWidth} × ${result.data.processing.inferenceHeight} ` +
+            `For fast preview, the ${analysisData.processing.inputWidth} × ${analysisData.processing.inputHeight} ` +
+            `images were downsampled to ${analysisData.processing.inferenceWidth} × ${analysisData.processing.inferenceHeight} ` +
             "for inference. The change mask is scaled back to the input size; small changes may be missed."
           )
         }
       ];
     }
 
+    const imageQuality = analysisData.imageQuality || falseDetection.imageQuality || falseDetection.data?.imageQuality || null;
+    const analysisReliability = analysisData.analysisReliability || falseDetection.analysisReliability || falseDetection.data?.analysisReliability || null;
+    const predictionUncertainty = analysisData.predictionUncertainty || falseDetection.predictionUncertainty || falseDetection.data?.predictionUncertainty || null;
+
+    if (analysisData) {
+      analysisData.imageQuality = imageQuality || analysisData.imageQuality;
+      analysisData.analysisReliability = analysisReliability || analysisData.analysisReliability;
+      analysisData.predictionUncertainty = predictionUncertainty || analysisData.predictionUncertainty;
+    }
+
     return res.json({
       success: true,
       analysisBlocked: false,
       falseDetection,
-      data: result.data
+      data: analysisData,
+      imageQuality,
+      analysisReliability,
+      predictionUncertainty
     });
   } catch (error) {
     return handleRouteError(res, error, "Image analysis failed.");

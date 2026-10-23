@@ -305,6 +305,8 @@ def analyze_pair(before_bytes: bytes, after_bytes: bytes, area_km2: float | None
 
     changed_probability = probability_sum / coverage_count
     inference_mask = changed_probability >= 0.5
+    uncertain_mask = (changed_probability >= 0.4) & (changed_probability <= 0.6)
+    uncertain_pixel_percentage = float(uncertain_mask.mean() * 100)
     change_mask = np.asarray(
         Image.fromarray(inference_mask).resize(
             (width, height),
@@ -314,6 +316,43 @@ def analyze_pair(before_bytes: bytes, after_bytes: bytes, area_km2: float | None
     )
     change_percent = float(change_mask.mean() * 100)
     confidence_percent = float(certainty_total / certainty_batches * 100)
+
+    quality_summary = {
+        "t1": _quality_summary(before, "T1", pre_resize=(width, height)),
+        "t2": _quality_summary(after, "T2", pre_resize=(width, height)),
+        "alignment": _alignment_screen(before, after),
+        "preprocessing": {
+            "original_dimensions": {
+                "t1": {"width": width, "height": height, "pixel_count": width * height},
+                "t2": {"width": width, "height": height, "pixel_count": width * height},
+            },
+            "resized_to_match": False,
+            "matching_dimensions": True,
+            "effective_inference_dimensions": {"width": inference_width, "height": inference_height},
+            "max_longest_side_limit": MAX_INFERENCE_SIDE,
+            "downsampled_for_inference": scale < 1,
+            "warning": "For fast preview, the longer side is downsampled to a maximum of 256 pixels before inference. Small or narrow changes can be missed."
+        },
+    }
+    reliability = _build_reliability_summary(
+        [
+            "The model output is assessed heuristically from image quality and probability margins.",
+        ] if uncertain_pixel_percentage > 10 else [],
+        quality_summary,
+        {
+            "available": True,
+            "uncertain_pixel_percentage": uncertain_pixel_percentage,
+        },
+    )
+    uncertainty = {
+        "available": True,
+        "method": "Distance from the decision threshold (0.5) using model change probabilities",
+        "uncertain_pixel_percentage": round(uncertain_pixel_percentage, 2),
+        "explanation": (
+            "Pixels close to the 0.5 decision threshold are treated as uncertain because the model's output is near the classification boundary. "
+            "This is a heuristic uncertainty estimate and not an independent calibrated probability of correctness."
+        ),
+    }
 
     summary = {
         "primaryVector": "Binary change detected",
@@ -360,6 +399,9 @@ def analyze_pair(before_bytes: bytes, after_bytes: bytes, area_km2: float | None
             "inferenceHeight": inference_height,
             "downsampled": scale < 1,
         },
+        "imageQuality": quality_summary,
+        "analysisReliability": reliability,
+        "predictionUncertainty": uncertainty,
         "model": {
             "id": MODEL_ID,
             "revision": "240df917623a3563431709a4cd621d9f739c8789",
@@ -373,7 +415,139 @@ def _image_metrics(image: Image.Image):
     vertical = np.diff(grayscale, axis=0)
     sharpness = float((horizontal.var() + vertical.var()) / 2)
     brightness = float(grayscale.mean())
-    return brightness, sharpness, image.size
+    contrast = float(grayscale.std())
+    return brightness, sharpness, contrast, image.size
+
+
+def _blur_label(sharpness_score: float) -> tuple[str, str]:
+    if sharpness_score >= 120:
+        return "Clear", "The image has strong local detail and is unlikely to be blurred."
+    if sharpness_score >= 30:
+        return "Potentially Blurry", "The image may be slightly soft; fine change boundaries can be harder to detect."
+    return "Severely Blurry", "The image lacks local contrast and is likely out of focus or heavily softened."
+
+
+def _brightness_label(mean_luminance: float) -> tuple[str, str]:
+    if mean_luminance < 45:
+        return "Underexposed", "The image is notably dark and may hide ground detail."
+    if mean_luminance > 210:
+        return "Overexposed", "The image is notably bright and may wash out detail."
+    return "Normal", "The overall luminance is within a moderate range for visual comparison."
+
+
+def _contrast_label(contrast_score: float) -> tuple[str, str]:
+    if contrast_score < 18:
+        return "Low Contrast", "The dynamic range is compressed, which can suppress subtle changes."
+    if contrast_score > 75:
+        return "High Contrast", "The image has strong tonal separation, which is usually manageable for comparison."
+    return "Balanced", "The image contrast is within a usable range for change detection."
+
+
+def _alignment_screen(before: Image.Image, after: Image.Image):
+    before_gray = np.asarray(before.convert("L"), dtype=np.float32)
+    after_gray = np.asarray(after.convert("L"), dtype=np.float32)
+    if before_gray.shape != after_gray.shape:
+        return {
+            "status": "mismatch",
+            "score": 0.0,
+            "explanation": "Images do not share identical dimensions, so alignment cannot be established from a direct feature comparison.",
+        }
+
+    before_norm = (before_gray - before_gray.mean()) / (before_gray.std() + 1e-6)
+    after_norm = (after_gray - after_gray.mean()) / (after_gray.std() + 1e-6)
+    corr = np.corrcoef(before_norm.ravel(), after_norm.ravel())[0, 1]
+    alignment_score = float(np.nan_to_num(corr, nan=0.0))
+    if alignment_score < -1:
+        alignment_score = -1.0
+    alignment_score = max(0.0, min(1.0, abs(alignment_score)))
+
+    if alignment_score >= 0.92:
+        status = "Clear"
+        explanation = "Preliminary feature alignment is strong, but this is not a verified geospatial registration check."
+    elif alignment_score >= 0.75:
+        status = "Potentially Misaligned"
+        explanation = "The image pair has moderate similarity, but local offsets or seasonal geometry changes could still affect the change mask."
+    else:
+        status = "Likely Misaligned"
+        explanation = "The image pair does not align well enough for trustworthy change interpretation without proper registration."
+
+    return {
+        "status": status,
+        "score": round(alignment_score, 3),
+        "explanation": explanation + " This is a preliminary check only and not a verified georegistration result.",
+    }
+
+
+def _quality_summary(image: Image.Image, name: str, *, pre_resize: tuple[int, int] | None = None):
+    brightness, sharpness, contrast, size = _image_metrics(image)
+    blur_label, blur_message = _blur_label(sharpness)
+    brightness_label, brightness_message = _brightness_label(brightness)
+    contrast_label, contrast_message = _contrast_label(contrast)
+    width, height = size
+    pixel_count = width * height
+    summary = {
+        "name": name,
+        "width": width,
+        "height": height,
+        "pixel_count": pixel_count,
+        "aspect_ratio": round(width / height, 4) if height else None,
+        "brightness_mean": round(brightness, 2),
+        "brightness_std": round(contrast, 2),
+        "sharpness_score": round(sharpness, 2),
+        "blur_status": blur_label,
+        "brightness_status": brightness_label,
+        "contrast_status": contrast_label,
+        "explanation": (
+            f"{blur_message} {brightness_message} {contrast_message} "
+            "These are heuristic quality indicators for image reliability, not direct model accuracy estimates."
+        ),
+        "recommendation": (
+            "Use a sharper, better exposed image or re-check capture settings before interpreting small changes."
+            if blur_label != "Clear" or brightness_label != "Normal" or contrast_label != "Balanced"
+            else "Image quality looks acceptable for comparison."
+        ),
+        "pre_resize": pre_resize,
+    }
+    return summary
+
+
+def _build_reliability_summary(factors: list[str], quality_summary: dict, uncertainty_summary: dict | None):
+    factor_count = len(factors)
+    normalized_score = max(0, 90 - factor_count * 18)
+    if uncertainty_summary and uncertainty_summary.get("uncertain_pixel_percentage") is not None:
+        normalized_score -= min(30, uncertainty_summary["uncertain_pixel_percentage"] * 0.7)
+
+    score = max(0, min(100, round(normalized_score)))
+    if factor_count == 0 and (not uncertainty_summary or not uncertainty_summary.get("available")):
+        status = "high"
+    elif score >= 70:
+        status = "moderate"
+    elif score >= 45:
+        status = "low"
+    else:
+        status = "insufficient_data" if factor_count == 0 else "low"
+
+    recommendations = [
+        "Review image alignment before interpreting small or fragmented change clusters.",
+        "Check whether similar brightness, haze, or blur levels are affecting the apparent change mask.",
+        "Interpret the result as a heuristic change estimate unless the source imagery is well registered and comparable."
+    ]
+    if factor_count:
+        recommendations.insert(0, "Use the quality findings to decide whether the comparison is trustworthy for change interpretation.")
+    limitations = [
+        "This assessment is heuristic and not an independent measure of model accuracy.",
+        "No ground-truth validation data or calibrated confidence model is assumed here.",
+        "Low-resolution or downsampled imagery can hide small or narrow change features.",
+        "Feature-based alignment is preliminary and does not confirm geospatial registration."
+    ]
+    return {
+        "status": status,
+        "score": score,
+        "score_type": "heuristic",
+        "factors": factors,
+        "limitations": limitations,
+        "recommendations": recommendations,
+    }
 
 
 def assess_image_pair(before_bytes: bytes, after_bytes: bytes):
@@ -383,9 +557,10 @@ def assess_image_pair(before_bytes: bytes, after_bytes: bytes):
     after_size = after.size
     before, after = _align_pair(before, after)
 
-    before_brightness, before_sharpness, _ = _image_metrics(before)
-    after_brightness, after_sharpness, _ = _image_metrics(after)
+    before_brightness, before_sharpness, before_contrast, _ = _image_metrics(before)
+    after_brightness, after_sharpness, after_contrast, _ = _image_metrics(after)
     issues = []
+    factors = []
 
     if before_size != after_size:
         issues.append({
@@ -399,6 +574,7 @@ def assess_image_pair(before_bytes: bytes, after_bytes: bytes):
                 "the same area and are registered before interpreting the results."
             ),
         })
+        factors.append("Different native dimensions require resizing before comparison.")
 
     if min(*before_size, *after_size) < 64:
         issues.append({
@@ -407,14 +583,16 @@ def assess_image_pair(before_bytes: bytes, after_bytes: bytes):
             "severity": "high",
             "explanation": "One or both images are too small for reliable pixel-level comparison.",
         })
+        factors.append("Very small image dimensions reduce pixel-level reliability.")
 
-    if before_sharpness < 3 and after_sharpness < 3:
+    if before_sharpness < 30 or after_sharpness < 30:
         issues.append({
             "type": "blur",
             "detected": True,
-            "severity": "medium",
-            "explanation": "Both images have very little local detail, which can reduce change-mask reliability.",
+            "severity": "medium" if before_sharpness >= 10 or after_sharpness >= 10 else "high",
+            "explanation": "One or both images have reduced local detail, which can blur change boundaries and reduce reliability.",
         })
+        factors.append("Blur or low edge detail may soften change boundaries.")
 
     brightness_difference = abs(before_brightness - after_brightness)
     if brightness_difference >= 55:
@@ -424,6 +602,58 @@ def assess_image_pair(before_bytes: bytes, after_bytes: bytes):
             "severity": "high" if brightness_difference >= 90 else "medium",
             "explanation": "A large average brightness difference may create apparent changes unrelated to land cover.",
         })
+        factors.append("Brightness mismatch may create false change signals.")
+
+    if before_contrast < 18 or after_contrast < 18:
+        issues.append({
+            "type": "low_contrast",
+            "detected": True,
+            "severity": "medium",
+            "explanation": "One or both images have low contrast, reducing the ability to distinguish subtle changes.",
+        })
+        factors.append("Low image contrast can suppress subtle land-cover differences.")
+
+    alignment = _alignment_screen(before, after)
+    alignment_issue = alignment["status"] in {"Potentially Misaligned", "Likely Misaligned"}
+    if alignment_issue:
+        issues.append({
+            "type": "alignment_warning",
+            "detected": True,
+            "severity": "medium" if alignment["score"] >= 0.75 else "high",
+            "score": alignment["score"],
+            "explanation": alignment["explanation"],
+        })
+        factors.append("Preliminary alignment check suggests a possible registration issue.")
+
+    image_quality = {
+        "t1": _quality_summary(before, "T1"),
+        "t2": _quality_summary(after, "T2"),
+        "alignment": {
+            "status": alignment["status"],
+            "score": alignment["score"],
+            "explanation": alignment["explanation"],
+        },
+        "preprocessing": {
+            "original_dimensions": {
+                "t1": {"width": before_size[0], "height": before_size[1], "pixel_count": before_size[0] * before_size[1]},
+                "t2": {"width": after_size[0], "height": after_size[1], "pixel_count": after_size[0] * after_size[1]},
+            },
+            "resized_to_match": before_size != after_size,
+            "matching_dimensions": before.size == after.size,
+            "effective_inference_dimensions": {"width": before.size[0], "height": before.size[1]},
+            "max_longest_side_limit": MAX_INFERENCE_SIDE,
+            "downsampled_for_inference": False,
+            "warning": "Matching dimensions do not guarantee spatial registration. Images can still be misaligned or cover different scenes.",
+        },
+    }
+
+    uncertainty = {
+        "available": False,
+        "method": "unavailable",
+        "uncertain_pixel_percentage": None,
+        "explanation": "Independent uncertainty estimation is unavailable for this local heuristic assessment.",
+    }
+    reliability = _build_reliability_summary(factors, image_quality, uncertainty)
 
     high_risk = any(issue["severity"] == "high" for issue in issues)
     risk = "high" if high_risk else "medium" if issues else "low"
@@ -446,9 +676,12 @@ def assess_image_pair(before_bytes: bytes, after_bytes: bytes):
     return {
         "validForChangeDetection": valid,
         "falseDetectionRisk": risk,
-        "confidence": 80 if issues else 70,
+        "confidence": max(25, 90 - len(issues) * 15),
         "issues": issues,
         "primaryReason": issues[0]["type"] if issues else "none",
         "recommendation": recommendation,
         "message": message,
+        "imageQuality": image_quality,
+        "analysisReliability": reliability,
+        "predictionUncertainty": uncertainty,
     }

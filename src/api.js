@@ -75,6 +75,27 @@ export const normalizeAnalysisResponse = (body) => {
     []
   );
   const summary = firstDefined(data?.summary, data?.changeSummary, data?.change_summary, {});
+  const imageQuality = firstDefined(
+    data?.imageQuality,
+    data?.image_quality,
+    body?.imageQuality,
+    body?.image_quality,
+    null
+  );
+  const analysisReliability = firstDefined(
+    data?.analysisReliability,
+    data?.analysis_reliability,
+    body?.analysisReliability,
+    body?.analysis_reliability,
+    null
+  );
+  const predictionUncertainty = firstDefined(
+    data?.predictionUncertainty,
+    data?.prediction_uncertainty,
+    body?.predictionUncertainty,
+    body?.prediction_uncertainty,
+    null
+  );
 
   return {
     transitionMatrix: Array.isArray(transitions) ? transitions.map(normalizeTransition) : [],
@@ -107,6 +128,9 @@ export const normalizeAnalysisResponse = (body) => {
     maskSrc: firstDefined(data?.maskSrc, data?.mask_src, data?.maskUrl, data?.mask_url, null),
     landCover: firstDefined(data?.landCover, data?.land_cover, null),
     qualityCheck: body?.falseDetection || null,
+    imageQuality,
+    analysisReliability,
+    predictionUncertainty,
     raw: data
   };
 };

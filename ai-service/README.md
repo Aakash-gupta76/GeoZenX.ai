@@ -55,5 +55,12 @@ so the model can process the pair. This does not correct spatial misalignment: b
 must still cover the same area and be registered. Resizing is reported as a quality warning.
 Sharpness and brightness findings are also returned as quality warnings with the analysis.
 
+The quality endpoint and analysis response now also include heuristic image-quality metrics,
+preprocessing details, preliminary alignment checks, and a reliability summary. These fields are
+intended to flag likely issues such as blur, contrast problems, resolution loss, or registration
+risk without claiming verified model accuracy. For analytics, the frontend displays the same result
+payload in a separate dashboard view with T1/T2 composition charts, a comparison chart, and a binary
+change summary.
+
 The model repository declares an MIT license. See its model card and paper for model limits,
 training data, and citation details: <https://huggingface.co/deepang/adaptformer-LEVIR-CD>.
