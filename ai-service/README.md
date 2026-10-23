@@ -64,3 +64,5 @@ change summary.
 
 The model repository declares an MIT license. See its model card and paper for model limits,
 training data, and citation details: <https://huggingface.co/deepang/adaptformer-LEVIR-CD>.
+
+You can also Download PDF of the changes analyzed with Graph Analysis......And with the Transition Matrix and any False Changes Detected. 
