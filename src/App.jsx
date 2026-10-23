@@ -18,6 +18,12 @@ export default function App() {
     setIsAnalyzed(true);
   };
 
+  const handleAnalysisStart = () => {
+    setIsAnalyzed(false);
+    setAnalysisData(null);
+    setAnalysisImages(null);
+  };
+
   return (
     <div id="top" className="app-shell min-h-screen flex flex-col justify-between font-sans text-slate-100">
       
@@ -33,6 +39,7 @@ export default function App() {
           {/* Section 1: Image Change Analysis */}
           <ImageAnalysis 
             onAnalysisComplete={handleAnalysisComplete}
+            onAnalysisStart={handleAnalysisStart}
             isAnalyzing={isAnalyzing}
             setIsAnalyzing={setIsAnalyzing}
           />
@@ -42,6 +49,7 @@ export default function App() {
             isAnalyzed={isAnalyzed}
             analysisData={analysisData}
             analysisImages={analysisImages}
+            isAnalyzing={isAnalyzing}
           />
 
           {/* Section 3: Change Intelligence Natural Language Chat */}

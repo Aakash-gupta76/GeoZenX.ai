@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Table, TrendingUp, TrendingDown, BarChart3, AlertTriangle, Gauge, ArrowLeft } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Table, TrendingUp, TrendingDown, BarChart3, AlertTriangle, Gauge, ArrowLeft, FileDown } from 'lucide-react';
 import { MOCK_TRANSITION_MATRIX } from '../data/mockData';
 
 const safeNumber = (value, fallback = 0) => {
@@ -130,8 +130,11 @@ function ComparisonChart({ items }) {
   );
 }
 
-export default function TransitionMatrix({ isAnalyzed, analysisData }) {
+export default function TransitionMatrix({ isAnalyzed, analysisData, analysisImages, isAnalyzing }) {
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [reportMessage, setReportMessage] = useState(null);
+  const reportInProgress = useRef(false);
   const categories = useMemo(() => normalizeCategoryData(analysisData), [analysisData]);
 
   const quality = analysisData?.imageQuality || analysisData?.raw?.imageQuality || {};
@@ -159,6 +162,33 @@ export default function TransitionMatrix({ isAnalyzed, analysisData }) {
     low: 'Image quality issues or alignment concerns may reduce confidence in the change mask.',
     insufficient_data: 'Reliability cannot be fully assessed from the available data alone.'
   }[reliability?.status || 'moderate'];
+  const reportAvailable = Boolean(isAnalyzed && analysisData && analysisImages && !isAnalyzing);
+
+  const handleDownloadReport = async () => {
+    if (!reportAvailable || reportInProgress.current) return;
+
+    reportInProgress.current = true;
+    setIsGeneratingReport(true);
+    setReportMessage(null);
+    try {
+      const { generateAnalysisReport } = await import('../utils/analysisReport');
+      const result = await generateAnalysisReport({ analysis: analysisData, images: analysisImages });
+      setReportMessage({
+        type: 'success',
+        text: result.imageWarnings
+          ? 'Report downloaded. One or more image or mask visuals could not be embedded.'
+          : 'PDF report downloaded successfully.'
+      });
+    } catch (error) {
+      setReportMessage({
+        type: 'error',
+        text: `Could not generate the PDF report: ${error.message}`
+      });
+    } finally {
+      reportInProgress.current = false;
+      setIsGeneratingReport(false);
+    }
+  };
 
   if (!isAnalyzed) {
     return (
@@ -343,6 +373,26 @@ export default function TransitionMatrix({ isAnalyzed, analysisData }) {
           </div>
         </div>
       )}
+
+      <div className="mt-6 flex flex-col items-center gap-2">
+        <button
+          type="button"
+          onClick={handleDownloadReport}
+          disabled={!reportAvailable || isGeneratingReport}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#8be0c1]/35 bg-[#8be0c1]/10 px-5 py-3 text-sm font-bold text-[#a5f3d0] transition hover:border-[#8be0c1]/60 hover:bg-[#8be0c1]/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8be0c1] disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800/50 disabled:text-slate-500"
+        >
+          <FileDown className="h-4 w-4" />
+          {isGeneratingReport ? 'Generating PDF...' : 'Download PDF Report'}
+        </button>
+        {reportMessage && (
+          <p
+            role={reportMessage.type === 'error' ? 'alert' : 'status'}
+            className={`text-center text-xs ${reportMessage.type === 'error' ? 'text-rose-300' : 'text-emerald-300'}`}
+          >
+            {reportMessage.text}
+          </p>
+        )}
+      </div>
     </section>
   );
 }

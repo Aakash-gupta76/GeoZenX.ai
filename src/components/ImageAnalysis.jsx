@@ -3,7 +3,7 @@ import { Upload, Image as ImageIcon, CheckCircle, RefreshCw, Layers, Crosshair, 
 import { SAMPLE_PRESETS } from '../data/mockData';
 import { analyzeImages } from '../api';
 
-export default function ImageAnalysis({ onAnalysisComplete, isAnalyzing, setIsAnalyzing }) {
+export default function ImageAnalysis({ onAnalysisComplete, onAnalysisStart, isAnalyzing, setIsAnalyzing }) {
   const [t1Image, setT1Image] = useState(null);
   const [t2Image, setT2Image] = useState(null);
   const [t1FileName,  setT1FileName] = useState('');
@@ -35,9 +35,10 @@ export default function ImageAnalysis({ onAnalysisComplete, isAnalyzing, setIsAn
     }
 
     setIsAnalyzing(true);
+    onAnalysisStart?.();
     try {
       const result = await analyzeImages({ t1File, t2File, t1Image, t2Image });
-      onAnalysisComplete(result, { t1File, t2File, t1Image, t2Image });
+      onAnalysisComplete(result, { t1File, t2File, t1FileName, t2FileName, t1Image, t2Image });
     } catch (error) {
       window.alert(`Image analysis failed: ${error.message}`);
     } finally {
