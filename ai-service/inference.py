@@ -20,10 +20,10 @@ MAX_INFERENCE_SIDE = 256
 LAND_COVER_CLASSES = (
     ("VEGETATION", "#36c98f"),
     ("WATER", "#4d9dff"),
-    ("BUILDINGS", "#b7c4d3"),
+    ("BUILDINGS", "#8f337d"),
     ("ROADS", "#f0c674"),
-    ("BARE LAND", "#d5a45e"),
-    ("OTHER", "#8b91a1"),
+    ("BARE LAND", "#c14e63"),
+    ("OTHER", "#b7c4d3"),
 )
 
 
